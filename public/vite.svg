@@ -1,0 +1,11 @@
+<!-- Bus SVG icon, white bus on dark circle -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <circle cx="64" cy="64" r="64" fill="#363a4a"/>
+  <rect x="32" y="36" width="64" height="44" rx="12" fill="#fff"/>
+  <rect x="40" y="44" width="48" height="20" rx="4" fill="#363a4a"/>
+  <rect x="40" y="68" width="16" height="8" rx="2" fill="#363a4a"/>
+  <rect x="72" y="68" width="16" height="8" rx="2" fill="#363a4a"/>
+  <circle cx="44" cy="88" r="6" fill="#fff"/>
+  <circle cx="84" cy="88" r="6" fill="#fff"/>
+  <rect x="60" y="80" width="8" height="12" rx="2" fill="#363a4a"/>
+</svg>
