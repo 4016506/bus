@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import NavBar from './NavBar';
+import { 
+  subscribeToBusLog, 
+  removeBusEntry,
+  checkFirebaseConnection 
+} from '../services/busDataService';
 
 const PAGE_PASSWORD = "PASSWORD";
 
@@ -139,32 +144,52 @@ export default function TodaysBusesPage() {
     index: -1
   });
   const [message, setMessage] = useState('');
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
 
-  // Helper to load today's buses
+  // Helper to load today's buses (fallback for localStorage)
   function loadBuses(currentDay: string) {
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    const todaysEntries = data[currentDay] || [];
-    setEntries(todaysEntries);
+    if (!isFirebaseConnected) {
+      const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+      const todaysEntries = data[currentDay] || [];
+      setEntries(todaysEntries);
+    }
+    // When Firebase is connected, entries are updated via subscription
   }
 
   // Function to remove a specific bus by index
-  function removeBus(index: number) {
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    if (!data[today] || index < 0 || index >= data[today].length) {
-      setMessage('Error: Invalid bus entry.');
-      return;
+  async function removeBus(index: number) {
+    try {
+      if (isFirebaseConnected) {
+        const removedBus = await removeBusEntry(today, index);
+        if (removedBus) {
+          setMessage(`Removed ${removedBus.busNumber} from ${new Date(removedBus.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+        } else {
+          setMessage('Error: Invalid bus entry.');
+        }
+      } else {
+        // Fallback to localStorage
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        if (!data[today] || index < 0 || index >= data[today].length) {
+          setMessage('Error: Invalid bus entry.');
+          return;
+        }
+        
+        const removedBus = data[today][index];
+        data[today].splice(index, 1);
+        localStorage.setItem('busLog', JSON.stringify(data));
+        
+        // Reload the entries
+        loadBuses(today);
+        setMessage(`Removed ${removedBus.busNumber} from ${new Date(removedBus.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+      }
+      
+      // Clear message after 3 seconds
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Error removing bus:', error);
+      setMessage('Error removing bus. Please try again.');
+      setTimeout(() => setMessage(''), 3000);
     }
-    
-    const removedBus = data[today][index];
-    data[today].splice(index, 1);
-    localStorage.setItem('busLog', JSON.stringify(data));
-    
-    // Reload the entries
-    loadBuses(today);
-    setMessage(`Removed ${removedBus.busNumber} from ${new Date(removedBus.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
-    
-    // Clear message after 3 seconds
-    setTimeout(() => setMessage(''), 3000);
   }
 
   // Handle opening delete modal
@@ -192,14 +217,36 @@ export default function TodaysBusesPage() {
     }
   }
 
+  // Check Firebase connection on mount
   useEffect(() => {
-    loadBuses(today);
-    // Set up timer to check for midnight
+    const checkConnection = async () => {
+      const connected = await checkFirebaseConnection();
+      setIsFirebaseConnected(connected);
+    };
+    
+    checkConnection();
+  }, []);
+
+  // Subscribe to real-time updates when Firebase is connected
+  useEffect(() => {
+    if (!isFirebaseConnected) {
+      loadBuses(today);
+      return;
+    }
+    
+    const unsubscribe = subscribeToBusLog(today, (newEntries) => {
+      setEntries(newEntries);
+    });
+    
+    return unsubscribe;
+  }, [today, isFirebaseConnected]);
+
+  // Set up timer to check for midnight
+  useEffect(() => {
     const interval = setInterval(() => {
       const nowDay = new Date().toISOString().slice(0, 10);
       if (nowDay !== today) {
         setToday(nowDay);
-        loadBuses(nowDay);
       }
     }, 60 * 1000); // check every minute
     return () => clearInterval(interval);

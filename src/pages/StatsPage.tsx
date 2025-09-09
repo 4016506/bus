@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import NavBar from './NavBar';
+import { 
+  getAllBusLogs,
+  checkFirebaseConnection 
+} from '../services/busDataService';
 
 type Stats = { [busNumber: string]: number };
 type DateRange = {
@@ -72,6 +76,8 @@ export default function StatsPage() {
     startDate: '',
     endDate: ''
   });
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const itemsPerPage = 10;
@@ -84,22 +90,70 @@ export default function StatsPage() {
     return date >= startDate && date <= endDate;
   };
 
+  // Check Firebase connection on mount
   useEffect(() => {
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    const counts: Stats = {};
+    const checkConnection = async () => {
+      const connected = await checkFirebaseConnection();
+      setIsFirebaseConnected(connected);
+    };
     
-    // Filter entries by date range
-    Object.entries(data).forEach(([date, entries]: [string, any]) => {
-      if (isDateInRange(date, dateRange.startDate, dateRange.endDate)) {
-        entries.forEach((entry: any) => {
-          counts[entry.busNumber] = (counts[entry.busNumber] || 0) + 1;
+    checkConnection();
+  }, []);
+
+  // Load and calculate stats
+  useEffect(() => {
+    const loadStats = async () => {
+      setIsLoading(true);
+      try {
+        let data: any = {};
+        
+        if (isFirebaseConnected) {
+          data = await getAllBusLogs();
+        } else {
+          // Fallback to localStorage
+          data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        }
+        
+        const counts: Stats = {};
+        
+        // Filter entries by date range
+        Object.entries(data).forEach(([date, entries]: [string, any]) => {
+          if (isDateInRange(date, dateRange.startDate, dateRange.endDate)) {
+            if (Array.isArray(entries)) {
+              entries.forEach((entry: any) => {
+                counts[entry.busNumber] = (counts[entry.busNumber] || 0) + 1;
+              });
+            }
+          }
         });
+        
+        setStats(counts);
+        setCurrentPage(0); // Reset to first page when data changes
+      } catch (error) {
+        console.error('Error loading stats:', error);
+        // Fallback to localStorage on error
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        const counts: Stats = {};
+        
+        Object.entries(data).forEach(([date, entries]: [string, any]) => {
+          if (isDateInRange(date, dateRange.startDate, dateRange.endDate)) {
+            entries.forEach((entry: any) => {
+              counts[entry.busNumber] = (counts[entry.busNumber] || 0) + 1;
+            });
+          }
+        });
+        
+        setStats(counts);
+        setCurrentPage(0);
+      } finally {
+        setIsLoading(false);
       }
-    });
+    };
     
-    setStats(counts);
-    setCurrentPage(0); // Reset to first page when data changes
-  }, [dateRange]);
+    if (isFirebaseConnected !== null) { // Only run when we know the connection status
+      loadStats();
+    }
+  }, [dateRange, isFirebaseConnected]);
 
   const sorted = Object.entries(stats).sort((a, b) => b[1] - a[1]);
   const maxCount = sorted.length > 0 ? sorted[0][1] : 0;
@@ -158,6 +212,14 @@ export default function StatsPage() {
           <p className="text-xl text-white/70 max-w-2xl mx-auto">
             Analyze your transportation patterns and discover insights about your daily commute
           </p>
+          {isLoading && (
+            <div className="mt-4">
+              <div className="inline-flex items-center px-4 py-2 bg-white/10 rounded-lg">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                <span className="text-white/70">Loading statistics...</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Date Filter Section */}

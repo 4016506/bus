@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import NavBar from './NavBar';
+import { 
+  addBusEntry, 
+  undoLastBusEntry, 
+  clearAllBusData, 
+  clearBusLog, 
+  saveBusdleTemplate,
+  clearBusdleTemplate,
+  subscribeToBusLog,
+  subscribeToBusdleTemplate,
+  migrateLocalStorageToFirebase,
+  checkFirebaseConnection,
+  type BusdleTemplate
+} from '../services/busDataService';
 
 const PAGE_PASSWORD = "PASSWORD";
 
@@ -11,6 +24,11 @@ export default function AddBusPage() {
   const [passwordError, setPasswordError] = useState('');
   const [busdleOrder, setBusdleOrder] = useState('');
   const [busdleMessage, setBusdleMessage] = useState('');
+  const [todaysBusCount, setTodaysBusCount] = useState(0);
+  const [todaysEntries, setTodaysEntries] = useState<any[]>([]);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [currentBusdleTemplate, setCurrentBusdleTemplate] = useState<BusdleTemplate | null>(null);
 
   // Clear messages after 3 seconds
   useEffect(() => {
@@ -26,6 +44,45 @@ export default function AddBusPage() {
       return () => clearTimeout(timer);
     }
   }, [busdleMessage]);
+
+  // Check Firebase connection on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      const connected = await checkFirebaseConnection();
+      setIsFirebaseConnected(connected);
+      
+      if (!connected) {
+        setMessage('⚠️ Firebase connection failed. Using local storage.');
+      }
+    };
+    
+    checkConnection();
+  }, []);
+
+  // Subscribe to today's bus log for real-time updates
+  useEffect(() => {
+    if (!isFirebaseConnected) return;
+    
+    const today = new Date().toISOString().slice(0, 10);
+    const unsubscribe = subscribeToBusLog(today, (entries) => {
+      setTodaysBusCount(entries.length);
+      setTodaysEntries(entries);
+    });
+    
+    return unsubscribe;
+  }, [isFirebaseConnected]);
+
+  // Subscribe to current busdle template
+  useEffect(() => {
+    if (!isFirebaseConnected) return;
+    
+    const today = new Date().toISOString().slice(0, 10);
+    const unsubscribe = subscribeToBusdleTemplate(today, (template: BusdleTemplate | null) => {
+      setCurrentBusdleTemplate(template);
+    });
+    
+    return unsubscribe;
+  }, [isFirebaseConnected]);
 
   if (!authenticated) {
     return (
@@ -83,102 +140,213 @@ export default function AddBusPage() {
     );
   }
 
-  function handleAddBus(e: React.FormEvent) {
+  async function handleAddBus(e: React.FormEvent) {
     e.preventDefault();
     if (!busNumber.trim()) {
       setMessage('Please enter a bus number.');
       return;
     }
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const entry = { busNumber, timestamp: now.toISOString() };
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    if (!data[today]) data[today] = [];
-    data[today].push(entry);
-    localStorage.setItem('busLog', JSON.stringify(data));
-    setMessage(`Bus ${busNumber} added!`);
-    setBusNumber('');
-  }
-
-  function handleAddLightRail(line: '1' | '2') {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const entry = { busNumber: line === '1' ? 'Line 1' : 'Line 2', timestamp: now.toISOString() };
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    if (!data[today]) data[today] = [];
-    data[today].push(entry);
-    localStorage.setItem('busLog', JSON.stringify(data));
-    setMessage(`Added ${entry.busNumber} to today's rides!`);
-  }
-
-  function handleUndo() {
-    const today = new Date().toISOString().slice(0, 10);
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    if (!data[today] || data[today].length === 0) {
-      setMessage('No buses to undo for today.');
-      return;
+    
+    try {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const entry = { busNumber, timestamp: now.toISOString() };
+      
+      if (isFirebaseConnected) {
+        await addBusEntry(today, entry);
+      } else {
+        // Fallback to localStorage
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        if (!data[today]) data[today] = [];
+        data[today].push(entry);
+        localStorage.setItem('busLog', JSON.stringify(data));
+      }
+      
+      setMessage(`Bus ${busNumber} added!`);
+      setBusNumber('');
+    } catch (error) {
+      console.error('Error adding bus:', error);
+      setMessage('Error adding bus. Please try again.');
     }
-    const removed = data[today].pop();
-    localStorage.setItem('busLog', JSON.stringify(data));
-    setMessage(removed ? `Removed last bus: ${removed.busNumber}` : 'No buses to undo for today.');
   }
 
-  function handleClearAllBusData() {
-    localStorage.removeItem('busLog');
-    setMessage('All bus data cleared!');
+  async function handleAddLightRail(line: '1' | '2') {
+    try {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const entry = { busNumber: line === '1' ? 'Line 1' : 'Line 2', timestamp: now.toISOString() };
+      
+      if (isFirebaseConnected) {
+        await addBusEntry(today, entry);
+      } else {
+        // Fallback to localStorage
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        if (!data[today]) data[today] = [];
+        data[today].push(entry);
+        localStorage.setItem('busLog', JSON.stringify(data));
+      }
+      
+      setMessage(`Added ${entry.busNumber} to today's rides!`);
+    } catch (error) {
+      console.error('Error adding light rail:', error);
+      setMessage('Error adding light rail. Please try again.');
+    }
   }
 
-  function handleResetTodaysBuses() {
-    const today = new Date().toISOString().slice(0, 10);
-    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-    data[today] = [];
-    localStorage.setItem('busLog', JSON.stringify(data));
-    setMessage("Today's buses have been reset!");
+  async function handleUndo() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      
+      if (isFirebaseConnected) {
+        const removed = await undoLastBusEntry(today);
+        if (removed) {
+          setMessage(`Removed last bus: ${removed.busNumber}`);
+        } else {
+          setMessage('No buses to undo for today.');
+        }
+      } else {
+        // Fallback to localStorage
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        if (!data[today] || data[today].length === 0) {
+          setMessage('No buses to undo for today.');
+          return;
+        }
+        const removed = data[today].pop();
+        localStorage.setItem('busLog', JSON.stringify(data));
+        setMessage(removed ? `Removed last bus: ${removed.busNumber}` : 'No buses to undo for today.');
+      }
+    } catch (error) {
+      console.error('Error undoing last bus:', error);
+      setMessage('Error undoing last bus. Please try again.');
+    }
   }
 
-  function handleSetBusdleTemplate(e: React.FormEvent) {
+  async function handleClearAllBusData() {
+    try {
+      if (isFirebaseConnected) {
+        await clearAllBusData();
+      } else {
+        // Fallback to localStorage
+        localStorage.removeItem('busLog');
+        localStorage.removeItem('busdleTemplates');
+      }
+      setMessage('All bus data cleared!');
+    } catch (error) {
+      console.error('Error clearing all bus data:', error);
+      setMessage('Error clearing data. Please try again.');
+    }
+  }
+
+  async function handleResetTodaysBuses() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      
+      if (isFirebaseConnected) {
+        await clearBusLog(today);
+      } else {
+        // Fallback to localStorage
+        const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+        data[today] = [];
+        localStorage.setItem('busLog', JSON.stringify(data));
+      }
+      
+      setMessage("Today's buses have been reset!");
+    } catch (error) {
+      console.error('Error resetting today\'s buses:', error);
+      setMessage('Error resetting buses. Please try again.');
+    }
+  }
+
+  async function handleSetBusdleTemplate(e: React.FormEvent) {
     e.preventDefault();
     if (!busdleOrder.trim()) {
       setBusdleMessage('Please enter the bus order.');
       return;
     }
 
-    // Parse the bus order (comma-separated)
-    const busOrder = busdleOrder.split(',').map(bus => bus.trim()).filter(bus => bus);
-    
-    // Filter out light rail (Line 1, Line 2)
-    const filteredBusOrder = busOrder.filter(bus => 
-      !bus.toLowerCase().includes('line') && 
-      bus.toLowerCase() !== 'line 1' && 
-      bus.toLowerCase() !== 'line 2'
-    );
+    try {
+      // Parse the bus order (comma-separated)
+      const busOrder = busdleOrder.split(',').map(bus => bus.trim()).filter(bus => bus);
+      
+      // Filter out light rail (Line 1, Line 2)
+      const filteredBusOrder = busOrder.filter(bus => 
+        !bus.toLowerCase().includes('line') && 
+        bus.toLowerCase() !== 'line 1' && 
+        bus.toLowerCase() !== 'line 2'
+      );
 
-    if (filteredBusOrder.length === 0) {
-      setBusdleMessage('Please enter at least one valid bus (light rail excluded).');
-      return;
+      if (filteredBusOrder.length === 0) {
+        setBusdleMessage('Please enter at least one valid bus (light rail excluded).');
+        return;
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const uniqueBuses = [...new Set(filteredBusOrder)];
+      
+      const busdleTemplate = {
+        date: today,
+        busOrder: filteredBusOrder,
+        uniqueBusCount: uniqueBuses.length
+      };
+
+      if (isFirebaseConnected) {
+        await saveBusdleTemplate(today, busdleTemplate);
+      } else {
+        // Fallback to localStorage
+        const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
+        busdleData[today] = busdleTemplate;
+        localStorage.setItem('busdleTemplates', JSON.stringify(busdleData));
+      }
+      
+      setBusdleMessage(`Busdle template set! ${filteredBusOrder.length} buses, ${uniqueBuses.length} unique.`);
+      setBusdleOrder('');
+    } catch (error) {
+      console.error('Error setting busdle template:', error);
+      setBusdleMessage('Error setting busdle template. Please try again.');
     }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const uniqueBuses = [...new Set(filteredBusOrder)];
-    
-    const busdleTemplate = {
-      date: today,
-      busOrder: filteredBusOrder,
-      uniqueBusCount: uniqueBuses.length
-    };
-
-    const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
-    busdleData[today] = busdleTemplate;
-    localStorage.setItem('busdleTemplates', JSON.stringify(busdleData));
-    
-    setBusdleMessage(`Busdle template set! ${filteredBusOrder.length} buses, ${uniqueBuses.length} unique.`);
-    setBusdleOrder('');
   }
 
   function getCurrentBusdleTemplate() {
-    const today = new Date().toISOString().slice(0, 10);
-    const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
-    return busdleData[today] || null;
+    if (isFirebaseConnected) {
+      return currentBusdleTemplate;
+    } else {
+      // Fallback to localStorage
+      const today = new Date().toISOString().slice(0, 10);
+      const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
+      return busdleData[today] || null;
+    }
+  }
+
+  async function handleMigrateData() {
+    setIsMigrating(true);
+    try {
+      await migrateLocalStorageToFirebase();
+      setMessage('✅ Data migrated to Firebase successfully!');
+    } catch (error) {
+      console.error('Migration error:', error);
+      setMessage('❌ Migration failed. Please try again.');
+    }
+    setIsMigrating(false);
+  }
+
+  async function handleClearBusdle() {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      
+      if (isFirebaseConnected) {
+        await clearBusdleTemplate(today);
+      } else {
+        // Fallback to localStorage
+        const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
+        delete busdleData[today];
+        localStorage.setItem('busdleTemplates', JSON.stringify(busdleData));
+      }
+      
+      setBusdleMessage('🗑️ Today\'s Busdle cleared!');
+    } catch (error) {
+      console.error('Error clearing busdle:', error);
+      setBusdleMessage('❌ Error clearing Busdle. Please try again.');
+    }
   }
 
   return (
@@ -296,6 +464,12 @@ export default function AddBusPage() {
                       <p className="text-white/50 text-xs mt-2">
                         {currentTemplate.busOrder.length} buses, {currentTemplate.uniqueBusCount} unique
                       </p>
+                      <button 
+                        onClick={handleClearBusdle}
+                        className="mt-3 w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-2 px-3 rounded-lg transition-all duration-300 text-sm"
+                      >
+                        🗑️ Clear Today's Busdle
+                      </button>
                     </div>
                   );
                 }
@@ -315,13 +489,42 @@ export default function AddBusPage() {
               <div className="text-center py-8">
                 <div className="text-4xl mb-2">🚌</div>
                 <p className="text-white/70">
-                  {(() => {
+                  {isFirebaseConnected ? `${todaysBusCount} rides today` : (() => {
                     const today = new Date().toISOString().slice(0, 10);
                     const data = JSON.parse(localStorage.getItem('busLog') || '{}');
                     const todayEntries = data[today] || [];
                     return `${todayEntries.length} rides today`;
                   })()}
                 </p>
+              </div>
+            </div>
+
+            {/* Firebase Status */}
+            <div className="card">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+                <span className="text-2xl mr-3">{isFirebaseConnected ? '🔥' : '💾'}</span>
+                {isFirebaseConnected ? 'Firebase Connected' : 'Local Storage'}
+              </h3>
+              <div className="text-center py-4">
+                <div className={`text-sm px-3 py-2 rounded-lg ${
+                  isFirebaseConnected 
+                    ? 'bg-green-500/20 text-green-300' 
+                    : 'bg-yellow-500/20 text-yellow-300'
+                }`}>
+                  {isFirebaseConnected 
+                    ? '✅ Syncing across devices' 
+                    : '⚠️ Data stored locally only'
+                  }
+                </div>
+                {!isFirebaseConnected && localStorage.getItem('busLog') && (
+                  <button 
+                    onClick={handleMigrateData}
+                    disabled={isMigrating}
+                    className="mt-3 w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-2 px-4 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:opacity-50"
+                  >
+                    {isMigrating ? '🔄 Migrating...' : '📤 Migrate to Firebase'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -355,9 +558,18 @@ export default function AddBusPage() {
               </h3>
               <div className="space-y-2">
                 {(() => {
-                  const today = new Date().toISOString().slice(0, 10);
-                  const data = JSON.parse(localStorage.getItem('busLog') || '{}');
-                  const todayEntries = data[today] || [];
+                  let todayEntries = [];
+                  
+                  if (isFirebaseConnected) {
+                    // Use the real-time data from Firebase subscription
+                    todayEntries = todaysEntries;
+                  } else {
+                    // Fallback to localStorage
+                    const today = new Date().toISOString().slice(0, 10);
+                    const data = JSON.parse(localStorage.getItem('busLog') || '{}');
+                    todayEntries = data[today] || [];
+                  }
+                  
                   const recentEntries = todayEntries.slice(-3).reverse();
                   
                   if (recentEntries.length === 0) {

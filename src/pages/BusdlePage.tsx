@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import NavBar from './NavBar';
+import { 
+  subscribeToBusdleTemplate,
+  checkFirebaseConnection 
+} from '../services/busDataService';
 
 interface BusdleTemplate {
   date: string;
@@ -22,32 +26,71 @@ export default function BusdlePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [animatingGuessIndex, setAnimatingGuessIndex] = useState<number | null>(null);
   const [showWinAnimation, setShowWinAnimation] = useState(false);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+
+  // Check Firebase connection on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      const connected = await checkFirebaseConnection();
+      setIsFirebaseConnected(connected);
+    };
+    
+    checkConnection();
+  }, []);
 
   // Load current Busdle template
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10);
-    const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
     
-    if (busdleData[today]) {
-      setCurrentTemplate(busdleData[today]);
-      setInputValues(new Array(busdleData[today].busOrder.length).fill(''));
+    if (isFirebaseConnected) {
+      // Subscribe to real-time updates from Firebase
+      const unsubscribe = subscribeToBusdleTemplate(today, (template) => {
+        setCurrentTemplate(template);
+        if (template) {
+          setInputValues(new Array(template.busOrder.length).fill(''));
+        }
+      });
+      
+      return unsubscribe;
+    } else {
+      // Fallback to localStorage
+      const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
+      
+      if (busdleData[today]) {
+        setCurrentTemplate(busdleData[today]);
+        setInputValues(new Array(busdleData[today].busOrder.length).fill(''));
+      }
     }
-  }, []);
+  }, [isFirebaseConnected]);
 
-  // Check if guess matches the target
+  // Check if guess matches the target (proper Wordle algorithm)
   const evaluateGuess = (guess: string[]): ('correct' | 'present' | 'absent')[] => {
     if (!currentTemplate) return [];
     
     const target = currentTemplate.busOrder;
-    const result: ('correct' | 'present' | 'absent')[] = [];
+    const result: ('correct' | 'present' | 'absent')[] = new Array(guess.length).fill('absent');
+    const targetCounts: { [key: string]: number } = {};
     
+    // Count occurrences of each bus in target
+    target.forEach(bus => {
+      targetCounts[bus] = (targetCounts[bus] || 0) + 1;
+    });
+    
+    // First pass: mark all correct positions
     for (let i = 0; i < guess.length; i++) {
       if (guess[i] === target[i]) {
-        result.push('correct');
-      } else if (target.includes(guess[i])) {
-        result.push('present');
-      } else {
-        result.push('absent');
+        result[i] = 'correct';
+        targetCounts[guess[i]]--; // Reduce available count for this bus
+      }
+    }
+    
+    // Second pass: mark present positions (wrong position but exists)
+    for (let i = 0; i < guess.length; i++) {
+      if (result[i] === 'absent') { // Only check positions not already marked as correct
+        if (targetCounts[guess[i]] && targetCounts[guess[i]] > 0) {
+          result[i] = 'present';
+          targetCounts[guess[i]]--; // Reduce available count
+        }
       }
     }
     
