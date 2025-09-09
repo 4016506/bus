@@ -14,7 +14,7 @@ import {
   type BusdleTemplate
 } from '../services/busDataService';
 
-const PAGE_PASSWORD = "PASSWORD";
+const PAGE_PASSWORD = import.meta.env.VITE_PAGE_PASSWORD;
 
 export default function AddBusPage() {
   const [busNumber, setBusNumber] = useState('');
@@ -406,14 +406,14 @@ export default function AddBusPage() {
                 <button 
                   type="button" 
                   onClick={() => handleAddLightRail('1')}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-105"
+                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-105"
                 >
                   🚈 Line 1
                 </button>
                 <button 
                   type="button" 
                   onClick={() => handleAddLightRail('2')}
-                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-105"
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-105"
                 >
                   🚈 Line 2
                 </button>

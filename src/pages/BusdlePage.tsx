@@ -100,8 +100,8 @@ export default function BusdlePage() {
   const handleGuess = async () => {
     if (!currentTemplate || currentGuess.length !== currentTemplate.busOrder.length || isSubmitting) return;
     
-    // Check if all positions are filled
-    if (currentGuess.some(bus => !bus.trim())) {
+    // Check if all positions are filled with non-empty alphanumeric values
+    if (currentGuess.some(bus => !bus || bus.length === 0)) {
       return;
     }
 
@@ -148,12 +148,15 @@ export default function BusdlePage() {
   };
 
   const handleInputChange = (index: number, value: string) => {
+    // Remove any non-alphanumeric characters and convert to uppercase
+    const cleanedValue = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    
     const newInputValues = [...inputValues];
-    newInputValues[index] = value;
+    newInputValues[index] = cleanedValue;
     setInputValues(newInputValues);
     
     const newCurrentGuess = [...currentGuess];
-    newCurrentGuess[index] = value;
+    newCurrentGuess[index] = cleanedValue;
     setCurrentGuess(newCurrentGuess);
   };
 
@@ -270,13 +273,15 @@ export default function BusdlePage() {
                     className="w-16 h-16 text-center text-lg font-bold bg-white/10 border border-white/30 rounded-lg text-white focus:border-primary-500 focus:outline-none"
                     placeholder="?"
                     maxLength={3}
+                    pattern="[a-zA-Z0-9]*"
+                    title="Only letters and numbers are allowed"
                   />
                 ))}
               </div>
               <div className="text-center">
                 <button
                   onClick={handleGuess}
-                  disabled={currentGuess.length !== currentTemplate.busOrder.length || currentGuess.some(bus => !bus.trim()) || isSubmitting}
+                  disabled={currentGuess.length !== currentTemplate.busOrder.length || currentGuess.some(bus => !bus || bus.length === 0) || isSubmitting}
                   className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? '🎯 Checking...' : '🎯 Submit Guess'}

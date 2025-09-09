@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase/firestore';
 // Firebase configuration - you'll need to replace these with your actual config values
 // Get these from Firebase Console > Project Settings > General > Your apps > Web app
 const firebaseConfig = {
-    apiKey: "AIzaSyD9z06PKtZws6Z2VWceU-kwVz34ua-eCBo",
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: "bus-6394e.firebaseapp.com",
     projectId: "bus-6394e",
     storageBucket: "bus-6394e.firebasestorage.app",

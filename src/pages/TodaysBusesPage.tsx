@@ -6,7 +6,7 @@ import {
   checkFirebaseConnection 
 } from '../services/busDataService';
 
-const PAGE_PASSWORD = "PASSWORD";
+const PAGE_PASSWORD = import.meta.env.VITE_PAGE_PASSWORD;
 
 function BusIcon({ number, timestamp }: { number: string, timestamp?: string }) {
   let iconClass = "bus-icon ";
