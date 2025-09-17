@@ -16,6 +16,15 @@ import {
 
 const PAGE_PASSWORD = import.meta.env.VITE_PAGE_PASSWORD;
 
+// Helper function to get local date in YYYY-MM-DD format
+function getLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function AddBusPage() {
   const [busNumber, setBusNumber] = useState('');
   const [message, setMessage] = useState('');
@@ -63,7 +72,7 @@ export default function AddBusPage() {
   useEffect(() => {
     if (!isFirebaseConnected) return;
     
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateString();
     const unsubscribe = subscribeToBusLog(today, (entries) => {
       setTodaysBusCount(entries.length);
       setTodaysEntries(entries);
@@ -72,12 +81,11 @@ export default function AddBusPage() {
     return unsubscribe;
   }, [isFirebaseConnected]);
 
-  // Subscribe to current busdle template
+  // Subscribe to current busdle template (persistent, not date-based)
   useEffect(() => {
     if (!isFirebaseConnected) return;
     
-    const today = new Date().toISOString().slice(0, 10);
-    const unsubscribe = subscribeToBusdleTemplate(today, (template: BusdleTemplate | null) => {
+    const unsubscribe = subscribeToBusdleTemplate('current', (template: BusdleTemplate | null) => {
       setCurrentBusdleTemplate(template);
     });
     
@@ -149,7 +157,7 @@ export default function AddBusPage() {
     
     try {
       const now = new Date();
-      const today = now.toISOString().slice(0, 10);
+      const today = getLocalDateString();
       const entry = { busNumber, timestamp: now.toISOString() };
       
       if (isFirebaseConnected) {
@@ -173,7 +181,7 @@ export default function AddBusPage() {
   async function handleAddLightRail(line: '1' | '2') {
     try {
       const now = new Date();
-      const today = now.toISOString().slice(0, 10);
+      const today = getLocalDateString();
       const entry = { busNumber: line === '1' ? 'Line 1' : 'Line 2', timestamp: now.toISOString() };
       
       if (isFirebaseConnected) {
@@ -195,7 +203,7 @@ export default function AddBusPage() {
 
   async function handleUndo() {
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getLocalDateString();
       
       if (isFirebaseConnected) {
         const removed = await undoLastBusEntry(today);
@@ -239,7 +247,7 @@ export default function AddBusPage() {
 
   async function handleResetTodaysBuses() {
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getLocalDateString();
       
       if (isFirebaseConnected) {
         await clearBusLog(today);
@@ -280,21 +288,20 @@ export default function AddBusPage() {
         return;
       }
 
-      const today = new Date().toISOString().slice(0, 10);
       const uniqueBuses = [...new Set(filteredBusOrder)];
       
       const busdleTemplate = {
-        date: today,
+        date: 'current',
         busOrder: filteredBusOrder,
         uniqueBusCount: uniqueBuses.length
       };
 
       if (isFirebaseConnected) {
-        await saveBusdleTemplate(today, busdleTemplate);
+        await saveBusdleTemplate('current', busdleTemplate);
       } else {
         // Fallback to localStorage
         const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
-        busdleData[today] = busdleTemplate;
+        busdleData['current'] = busdleTemplate;
         localStorage.setItem('busdleTemplates', JSON.stringify(busdleData));
       }
       
@@ -311,9 +318,8 @@ export default function AddBusPage() {
       return currentBusdleTemplate;
     } else {
       // Fallback to localStorage
-      const today = new Date().toISOString().slice(0, 10);
       const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
-      return busdleData[today] || null;
+      return busdleData['current'] || null;
     }
   }
 
@@ -329,20 +335,19 @@ export default function AddBusPage() {
     setIsMigrating(false);
   }
 
+
   async function handleClearBusdle() {
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      
       if (isFirebaseConnected) {
-        await clearBusdleTemplate(today);
+        await clearBusdleTemplate('current');
       } else {
         // Fallback to localStorage
         const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
-        delete busdleData[today];
+        delete busdleData['current'];
         localStorage.setItem('busdleTemplates', JSON.stringify(busdleData));
       }
       
-      setBusdleMessage('🗑️ Today\'s Busdle cleared!');
+      setBusdleMessage('🗑️ Current Busdle cleared!');
     } catch (error) {
       console.error('Error clearing busdle:', error);
       setBusdleMessage('❌ Error clearing Busdle. Please try again.');
@@ -377,7 +382,12 @@ export default function AddBusPage() {
                 <input
                   type="text"
                   value={busNumber}
-                  onChange={e => setBusNumber(e.target.value)}
+                  onChange={e => {
+                    const value = e.target.value;
+                    // Only allow numbers and uppercase letters, no spaces or symbols
+                    const filteredValue = value.replace(/[^0-9A-Z]/g, '');
+                    setBusNumber(filteredValue);
+                  }}
                   placeholder="Enter bus number (e.g., 42, 15, etc.)"
                   className="input-field"
                 />
@@ -468,7 +478,7 @@ export default function AddBusPage() {
                         onClick={handleClearBusdle}
                         className="mt-3 w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-2 px-3 rounded-lg transition-all duration-300 text-sm"
                       >
-                        🗑️ Clear Today's Busdle
+                        🗑️ Clear Current Busdle
                       </button>
                     </div>
                   );
@@ -490,7 +500,7 @@ export default function AddBusPage() {
                 <div className="text-4xl mb-2">🚌</div>
                 <p className="text-white/70">
                   {isFirebaseConnected ? `${todaysBusCount} rides today` : (() => {
-                    const today = new Date().toISOString().slice(0, 10);
+                    const today = getLocalDateString();
                     const data = JSON.parse(localStorage.getItem('busLog') || '{}');
                     const todayEntries = data[today] || [];
                     return `${todayEntries.length} rides today`;
@@ -565,7 +575,7 @@ export default function AddBusPage() {
                     todayEntries = todaysEntries;
                   } else {
                     // Fallback to localStorage
-                    const today = new Date().toISOString().slice(0, 10);
+                    const today = getLocalDateString();
                     const data = JSON.parse(localStorage.getItem('busLog') || '{}');
                     todayEntries = data[today] || [];
                   }

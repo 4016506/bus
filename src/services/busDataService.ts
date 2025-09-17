@@ -232,6 +232,9 @@ export const migrateLocalStorageToFirebase = async (): Promise<void> => {
   }
 };
 
+
+
+
 // Check if Firebase is properly configured
 export const checkFirebaseConnection = async (): Promise<boolean> => {
   try {

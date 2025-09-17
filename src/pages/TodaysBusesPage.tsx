@@ -8,6 +8,15 @@ import {
 
 const PAGE_PASSWORD = import.meta.env.VITE_PAGE_PASSWORD;
 
+// Helper function to get local date in YYYY-MM-DD format
+function getLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function BusIcon({ number, timestamp }: { number: string, timestamp?: string }) {
   let iconClass = "bus-icon ";
   let displayText = number;
@@ -132,7 +141,7 @@ function DeleteBusModal({
 }
 
 export default function TodaysBusesPage() {
-  const [today, setToday] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today, setToday] = useState(() => getLocalDateString());
   const [entries, setEntries] = useState<any[]>([]);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
@@ -244,7 +253,7 @@ export default function TodaysBusesPage() {
   // Set up timer to check for midnight
   useEffect(() => {
     const interval = setInterval(() => {
-      const nowDay = new Date().toISOString().slice(0, 10);
+      const nowDay = getLocalDateString();
       if (nowDay !== today) {
         setToday(nowDay);
       }

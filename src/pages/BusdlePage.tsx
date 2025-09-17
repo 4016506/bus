@@ -38,13 +38,11 @@ export default function BusdlePage() {
     checkConnection();
   }, []);
 
-  // Load current Busdle template
+  // Load current Busdle template (persistent, not date-based)
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    
     if (isFirebaseConnected) {
-      // Subscribe to real-time updates from Firebase
-      const unsubscribe = subscribeToBusdleTemplate(today, (template) => {
+      // Subscribe to real-time updates from Firebase using 'current' as the key
+      const unsubscribe = subscribeToBusdleTemplate('current', (template) => {
         setCurrentTemplate(template);
         if (template) {
           setInputValues(new Array(template.busOrder.length).fill(''));
@@ -56,9 +54,9 @@ export default function BusdlePage() {
       // Fallback to localStorage
       const busdleData = JSON.parse(localStorage.getItem('busdleTemplates') || '{}');
       
-      if (busdleData[today]) {
-        setCurrentTemplate(busdleData[today]);
-        setInputValues(new Array(busdleData[today].busOrder.length).fill(''));
+      if (busdleData['current']) {
+        setCurrentTemplate(busdleData['current']);
+        setInputValues(new Array(busdleData['current'].busOrder.length).fill(''));
       }
     }
   }, [isFirebaseConnected]);
