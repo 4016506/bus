@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import NavBar from './NavBar';
 import { 
   addBusEntry, 
@@ -14,7 +14,7 @@ import {
   saveBusBankTemplate,
   getBusBankTemplates,
   deleteBusBankTemplate,
-  updateBusBankTemplateLastUsed,
+  updateBusBankTemplate,
   saveActiveBusBank,
   subscribeToActiveBusBank,
   type BusdleTemplate,
@@ -55,6 +55,11 @@ export default function AddBusPage() {
   const [customBusBank, setCustomBusBank] = useState('');
   const [busBankMessage, setBusBankMessage] = useState('');
   const [isUserAction, setIsUserAction] = useState(false);
+  
+  // Edit template state
+  const [editingTemplate, setEditingTemplate] = useState<BusBankTemplate | null>(null);
+  const [editTemplateName, setEditTemplateName] = useState('');
+  const [editTemplateBuses, setEditTemplateBuses] = useState('');
 
   // Clear messages after 3 seconds
   useEffect(() => {
@@ -530,6 +535,60 @@ export default function AddBusPage() {
     setBusBankMessage('🗑️ Bus bank cleared');
   }
 
+  // Edit template functions
+  function handleEditTemplate(template: BusBankTemplate) {
+    setEditingTemplate(template);
+    setEditTemplateName(template.name);
+    setEditTemplateBuses(template.buses.join(', '));
+  }
+
+  async function handleSaveEdit() {
+    if (!editingTemplate || !editTemplateName.trim() || !editTemplateBuses.trim()) {
+      setBusBankMessage('Please enter both template name and buses.');
+      return;
+    }
+
+    try {
+      const buses = editTemplateBuses.split(',').map(bus => bus.trim()).filter(bus => bus);
+      const updatedTemplate = {
+        ...editingTemplate,
+        name: editTemplateName.trim(),
+        buses
+      };
+
+      if (isFirebaseConnected) {
+        await updateBusBankTemplate(editingTemplate.id, {
+          name: updatedTemplate.name,
+          buses: updatedTemplate.buses
+        });
+        const templates = await getBusBankTemplates();
+        setBusBankTemplates(templates);
+      } else {
+        // Fallback to localStorage
+        const templates = JSON.parse(localStorage.getItem('busBankTemplates') || '[]');
+        const updatedTemplates = templates.map((t: BusBankTemplate) => 
+          t.id === editingTemplate.id ? updatedTemplate : t
+        );
+        localStorage.setItem('busBankTemplates', JSON.stringify(updatedTemplates));
+        setBusBankTemplates(updatedTemplates);
+      }
+
+      setBusBankMessage(`✅ Template "${updatedTemplate.name}" updated!`);
+      setEditingTemplate(null);
+      setEditTemplateName('');
+      setEditTemplateBuses('');
+    } catch (error) {
+      console.error('Error updating bus bank template:', error);
+      setBusBankMessage('❌ Error updating template. Please try again.');
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditingTemplate(null);
+    setEditTemplateName('');
+    setEditTemplateBuses('');
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 pt-16">
       <NavBar />
@@ -714,37 +773,90 @@ export default function AddBusPage() {
                     ) : (
                       <div className="space-y-2">
                         {busBankTemplates.map(template => (
-                          <div key={template.id} className="flex items-center justify-between bg-white/10 rounded-lg p-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium text-white">{template.name}</span>
-                                <span className="text-white/50 text-sm">({template.buses.length} buses)</span>
+                          <div key={template.id} className="bg-white/10 rounded-lg p-3">
+                            {editingTemplate?.id === template.id ? (
+                              // Edit mode
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-white/80 text-sm font-medium mb-2">
+                                    Template Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editTemplateName}
+                                    onChange={e => setEditTemplateName(e.target.value)}
+                                    className="input-field"
+                                    placeholder="Enter template name"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-white/80 text-sm font-medium mb-2">
+                                    Bus Numbers (comma-separated)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editTemplateBuses}
+                                    onChange={e => setEditTemplateBuses(e.target.value)}
+                                    className="input-field"
+                                    placeholder="e.g., 42, 15, 8, 3"
+                                  />
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleSaveEdit}
+                                    className="bg-green-500/20 hover:bg-green-500/30 text-green-200 px-3 py-1 rounded text-sm transition-colors flex-1"
+                                  >
+                                    💾 Save
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEdit}
+                                    className="bg-gray-500/20 hover:bg-gray-500/30 text-gray-200 px-3 py-1 rounded text-sm transition-colors flex-1"
+                                  >
+                                    ❌ Cancel
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex gap-1 flex-wrap">
-                                {template.buses.slice(0, 5).map((bus, index) => (
-                                  <span key={index} className="bg-primary-500/20 text-primary-200 px-2 py-1 rounded text-xs">
-                                    {bus}
-                                  </span>
-                                ))}
-                                {template.buses.length > 5 && (
-                                  <span className="text-white/50 text-xs">+{template.buses.length - 5} more</span>
-                                )}
+                            ) : (
+                              // View mode
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-medium text-white">{template.name}</span>
+                                    <span className="text-white/50 text-sm">({template.buses.length} buses)</span>
+                                  </div>
+                                  <div className="flex gap-1 flex-wrap">
+                                    {template.buses.slice(0, 5).map((bus, index) => (
+                                      <span key={index} className="bg-primary-500/20 text-primary-200 px-2 py-1 rounded text-xs">
+                                        {bus}
+                                      </span>
+                                    ))}
+                                    {template.buses.length > 5 && (
+                                      <span className="text-white/50 text-xs">+{template.buses.length - 5} more</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2 ml-3">
+                                  <button
+                                    onClick={() => handleSelectBusBankTemplate(template)}
+                                    className="bg-green-500/20 hover:bg-green-500/30 text-green-200 px-3 py-1 rounded text-sm transition-colors"
+                                  >
+                                    Select
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditTemplate(template)}
+                                    className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 px-3 py-1 rounded text-sm transition-colors"
+                                  >
+                                    ✏️ Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteBusBankTemplate(template.id)}
+                                    className="bg-red-500/20 hover:bg-red-500/30 text-red-200 px-3 py-1 rounded text-sm transition-colors"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex gap-2 ml-3">
-                              <button
-                                onClick={() => handleSelectBusBankTemplate(template)}
-                                className="bg-green-500/20 hover:bg-green-500/30 text-green-200 px-3 py-1 rounded text-sm transition-colors"
-                              >
-                                Select
-                              </button>
-                              <button
-                                onClick={() => handleDeleteBusBankTemplate(template.id)}
-                                className="bg-red-500/20 hover:bg-red-500/30 text-red-200 px-3 py-1 rounded text-sm transition-colors"
-                              >
-                                Delete
-                              </button>
-                            </div>
+                            )}
                           </div>
                         ))}
                       </div>

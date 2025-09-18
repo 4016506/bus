@@ -300,6 +300,19 @@ export const deleteBusBankTemplate = async (templateId: string): Promise<void> =
   }
 };
 
+export const updateBusBankTemplate = async (templateId: string, updates: Partial<BusBankTemplate>): Promise<void> => {
+  try {
+    const docRef = doc(db, 'busBankTemplates', templateId);
+    await setDoc(docRef, { 
+      ...updates,
+      lastUpdated: new Date().toISOString() 
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error updating bus bank template:', error);
+    throw error;
+  }
+};
+
 export const updateBusBankTemplateLastUsed = async (templateId: string): Promise<void> => {
   try {
     const docRef = doc(db, 'busBankTemplates', templateId);
