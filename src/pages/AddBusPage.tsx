@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import NavBar from './NavBar';
 import { 
   addBusEntry, 
@@ -11,7 +11,14 @@ import {
   subscribeToBusdleTemplate,
   migrateLocalStorageToFirebase,
   checkFirebaseConnection,
-  type BusdleTemplate
+  saveBusBankTemplate,
+  getBusBankTemplates,
+  deleteBusBankTemplate,
+  updateBusBankTemplateLastUsed,
+  saveActiveBusBank,
+  subscribeToActiveBusBank,
+  type BusdleTemplate,
+  type BusBankTemplate
 } from '../services/busDataService';
 
 const PAGE_PASSWORD = import.meta.env.VITE_PAGE_PASSWORD;
@@ -38,6 +45,16 @@ export default function AddBusPage() {
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [currentBusdleTemplate, setCurrentBusdleTemplate] = useState<BusdleTemplate | null>(null);
+  
+  // Bus bank management state
+  const [busBankTemplates, setBusBankTemplates] = useState<BusBankTemplate[]>([]);
+  const [showBusBankManager, setShowBusBankManager] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateBuses, setNewTemplateBuses] = useState('');
+  const [selectedBusBank, setSelectedBusBank] = useState<string[]>([]);
+  const [customBusBank, setCustomBusBank] = useState('');
+  const [busBankMessage, setBusBankMessage] = useState('');
+  const [isUserAction, setIsUserAction] = useState(false);
 
   // Clear messages after 3 seconds
   useEffect(() => {
@@ -53,6 +70,13 @@ export default function AddBusPage() {
       return () => clearTimeout(timer);
     }
   }, [busdleMessage]);
+
+  useEffect(() => {
+    if (busBankMessage) {
+      const timer = setTimeout(() => setBusBankMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [busBankMessage]);
 
   // Check Firebase connection on mount
   useEffect(() => {
@@ -91,6 +115,69 @@ export default function AddBusPage() {
     
     return unsubscribe;
   }, [isFirebaseConnected]);
+
+  // Load bus bank templates
+  useEffect(() => {
+    const loadBusBankTemplates = async () => {
+      if (isFirebaseConnected) {
+        try {
+          const templates = await getBusBankTemplates();
+          setBusBankTemplates(templates);
+        } catch (error) {
+          console.error('Error loading bus bank templates:', error);
+        }
+      } else {
+        // Fallback to localStorage
+        const templates = JSON.parse(localStorage.getItem('busBankTemplates') || '[]');
+        setBusBankTemplates(templates);
+      }
+    };
+    
+    loadBusBankTemplates();
+  }, [isFirebaseConnected]);
+
+  // Load selected bus bank from Firebase
+  useEffect(() => {
+    if (isFirebaseConnected) {
+      const unsubscribe = subscribeToActiveBusBank((busBank) => {
+        setSelectedBusBank(busBank);
+        // This is loading from Firebase, not a user action
+        setIsUserAction(false);
+      });
+      return unsubscribe;
+    } else {
+      // Fallback to localStorage
+      const savedBusBank = localStorage.getItem('selectedBusBank');
+      if (savedBusBank) {
+        try {
+          setSelectedBusBank(JSON.parse(savedBusBank));
+        } catch (error) {
+          console.error('Error loading selected bus bank:', error);
+        }
+      }
+      setIsUserAction(false);
+    }
+  }, [isFirebaseConnected]);
+
+  // Save selected bus bank to Firebase only when user changes it
+  useEffect(() => {
+    if (!isUserAction) return; // Only save when user actually changes the bus bank
+    
+    if (!isFirebaseConnected) {
+      // Fallback to localStorage
+      if (selectedBusBank.length > 0) {
+        localStorage.setItem('selectedBusBank', JSON.stringify(selectedBusBank));
+      } else {
+        localStorage.removeItem('selectedBusBank');
+      }
+      return;
+    }
+
+    // Save to Firebase when user changes it
+    saveActiveBusBank(selectedBusBank).catch(error => {
+      console.error('Error saving active bus bank:', error);
+    });
+  }, [selectedBusBank, isFirebaseConnected, isUserAction]);
 
   if (!authenticated) {
     return (
@@ -290,10 +377,14 @@ export default function AddBusPage() {
 
       const uniqueBuses = [...new Set(filteredBusOrder)];
       
+      // Use the selected bus bank from state (which is synced with Firebase)
+      const currentSelectedBusBank = selectedBusBank;
+
       const busdleTemplate = {
         date: 'current',
         busOrder: filteredBusOrder,
-        uniqueBusCount: uniqueBuses.length
+        uniqueBusCount: uniqueBuses.length,
+        busBank: currentSelectedBusBank.length > 0 ? currentSelectedBusBank : undefined
       };
 
       if (isFirebaseConnected) {
@@ -352,6 +443,91 @@ export default function AddBusPage() {
       console.error('Error clearing busdle:', error);
       setBusdleMessage('❌ Error clearing Busdle. Please try again.');
     }
+  }
+
+  // Bus bank management functions
+  async function handleCreateBusBankTemplate() {
+    if (!newTemplateName.trim() || !newTemplateBuses.trim()) {
+      setBusBankMessage('Please enter both template name and buses.');
+      return;
+    }
+
+    if (busBankTemplates.length >= 3) {
+      setBusBankMessage('Maximum 3 templates allowed. Delete one first.');
+      return;
+    }
+
+    try {
+      const buses = newTemplateBuses.split(',').map(bus => bus.trim()).filter(bus => bus);
+      const template: BusBankTemplate = {
+        id: `template_${Date.now()}`,
+        name: newTemplateName.trim(),
+        buses,
+        createdAt: new Date().toISOString()
+      };
+
+      if (isFirebaseConnected) {
+        await saveBusBankTemplate(template);
+        const templates = await getBusBankTemplates();
+        setBusBankTemplates(templates);
+      } else {
+        // Fallback to localStorage
+        const templates = JSON.parse(localStorage.getItem('busBankTemplates') || '[]');
+        templates.push(template);
+        localStorage.setItem('busBankTemplates', JSON.stringify(templates));
+        setBusBankTemplates(templates);
+      }
+
+      setBusBankMessage(`✅ Template "${template.name}" created!`);
+      setNewTemplateName('');
+      setNewTemplateBuses('');
+    } catch (error) {
+      console.error('Error creating bus bank template:', error);
+      setBusBankMessage('❌ Error creating template. Please try again.');
+    }
+  }
+
+  async function handleDeleteBusBankTemplate(templateId: string) {
+    try {
+      if (isFirebaseConnected) {
+        await deleteBusBankTemplate(templateId);
+        const templates = await getBusBankTemplates();
+        setBusBankTemplates(templates);
+      } else {
+        // Fallback to localStorage
+        const templates = JSON.parse(localStorage.getItem('busBankTemplates') || '[]');
+        const filteredTemplates = templates.filter((t: BusBankTemplate) => t.id !== templateId);
+        localStorage.setItem('busBankTemplates', JSON.stringify(filteredTemplates));
+        setBusBankTemplates(filteredTemplates);
+      }
+
+      setBusBankMessage('🗑️ Template deleted!');
+    } catch (error) {
+      console.error('Error deleting bus bank template:', error);
+      setBusBankMessage('❌ Error deleting template. Please try again.');
+    }
+  }
+
+  function handleSelectBusBankTemplate(template: BusBankTemplate) {
+    setIsUserAction(true);
+    setSelectedBusBank(template.buses);
+    setCustomBusBank('');
+    setBusBankMessage(`✅ Selected template "${template.name}"`);
+  }
+
+  function handleCustomBusBankChange(value: string) {
+    setIsUserAction(true);
+    setCustomBusBank(value);
+    const buses = value.split(',').map(bus => bus.trim()).filter(bus => bus);
+    setSelectedBusBank(buses);
+    setBusBankMessage('✅ Custom bus bank updated');
+  }
+
+  function handleClearBusBank() {
+    setIsUserAction(true);
+    setSelectedBusBank([]);
+    setCustomBusBank('');
+    setBusBankMessage('🗑️ Bus bank cleared');
   }
 
   return (
@@ -485,6 +661,136 @@ export default function AddBusPage() {
                 }
                 return null;
               })()}
+            </div>
+
+            {/* Bus Bank Management Section */}
+            <div className="card">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+                <span className="text-2xl mr-3">🏦</span>
+                Bus Bank Management
+                <button
+                  onClick={() => setShowBusBankManager(!showBusBankManager)}
+                  className="ml-auto text-sm bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg transition-colors"
+                >
+                  {showBusBankManager ? 'Hide' : 'Manage'}
+                </button>
+              </h3>
+              
+              {showBusBankManager && (
+                <div className="space-y-4">
+                  {/* Create New Template */}
+                  <div className="bg-white/5 rounded-lg p-4">
+                    <h4 className="text-lg font-medium text-white mb-3">Create New Template</h4>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={newTemplateName}
+                        onChange={e => setNewTemplateName(e.target.value)}
+                        placeholder="Template name (e.g., 'Common Routes')"
+                        className="input-field"
+                      />
+                      <input
+                        type="text"
+                        value={newTemplateBuses}
+                        onChange={e => setNewTemplateBuses(e.target.value)}
+                        placeholder="Bus numbers (comma-separated, e.g., 42, 15, 8, 3)"
+                        className="input-field"
+                      />
+                      <button
+                        onClick={handleCreateBusBankTemplate}
+                        disabled={busBankTemplates.length >= 3}
+                        className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {busBankTemplates.length >= 3 ? 'Max 3 Templates' : '➕ Create Template'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Existing Templates */}
+                  <div className="bg-white/5 rounded-lg p-4">
+                    <h4 className="text-lg font-medium text-white mb-3">Saved Templates</h4>
+                    {busBankTemplates.length === 0 ? (
+                      <p className="text-white/50 text-center py-4">No templates saved yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {busBankTemplates.map(template => (
+                          <div key={template.id} className="flex items-center justify-between bg-white/10 rounded-lg p-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-white">{template.name}</span>
+                                <span className="text-white/50 text-sm">({template.buses.length} buses)</span>
+                              </div>
+                              <div className="flex gap-1 flex-wrap">
+                                {template.buses.slice(0, 5).map((bus, index) => (
+                                  <span key={index} className="bg-primary-500/20 text-primary-200 px-2 py-1 rounded text-xs">
+                                    {bus}
+                                  </span>
+                                ))}
+                                {template.buses.length > 5 && (
+                                  <span className="text-white/50 text-xs">+{template.buses.length - 5} more</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 ml-3">
+                              <button
+                                onClick={() => handleSelectBusBankTemplate(template)}
+                                className="bg-green-500/20 hover:bg-green-500/30 text-green-200 px-3 py-1 rounded text-sm transition-colors"
+                              >
+                                Select
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBusBankTemplate(template.id)}
+                                className="bg-red-500/20 hover:bg-red-500/30 text-red-200 px-3 py-1 rounded text-sm transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Custom Bus Bank */}
+                  <div className="bg-white/5 rounded-lg p-4">
+                    <h4 className="text-lg font-medium text-white mb-3">Custom Bus Bank</h4>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={customBusBank}
+                        onChange={e => handleCustomBusBankChange(e.target.value)}
+                        placeholder="Enter custom bus numbers (comma-separated)"
+                        className="input-field"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleClearBusBank}
+                          className="btn-secondary flex-1"
+                        >
+                          🗑️ Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current Selection */}
+                  {selectedBusBank.length > 0 && (
+                    <div className="bg-white/5 rounded-lg p-4">
+                      <h4 className="text-lg font-medium text-white mb-3">Selected Bus Bank</h4>
+                      <div className="flex gap-2 flex-wrap">
+                        {selectedBusBank.map((bus, index) => (
+                          <span key={index} className="bg-primary-500/20 text-primary-200 px-2 py-1 rounded text-sm">
+                            {bus}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-white/50 text-sm mt-2">
+                        {selectedBusBank.length} buses selected for easy mode
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -643,6 +949,18 @@ export default function AddBusPage() {
               <div className="flex items-center space-x-3">
                 <span className="text-2xl">🎯</span>
                 <p className="text-purple-200 font-medium">{busdleMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bus Bank Message Display */}
+        {busBankMessage && (
+          <div className="fixed bottom-6 right-6 max-w-sm">
+            <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl p-4 backdrop-blur-md">
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl">🏦</span>
+                <p className="text-blue-200 font-medium">{busBankMessage}</p>
               </div>
             </div>
           </div>

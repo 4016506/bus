@@ -72,6 +72,14 @@ service cloud.firestore {
     match /busdleTemplates/{document=**} {
       allow read, write: if true; // You can add authentication later
     }
+    // Allow read/write access to bus bank templates
+    match /busBankTemplates/{document=**} {
+      allow read, write: if true; // You can add authentication later
+    }
+    // Allow read/write access to active bus bank (for cross-device sync)
+    match /activeBusBank/{document=**} {
+      allow read, write: if true; // You can add authentication later
+    }
   }
 }
 ```

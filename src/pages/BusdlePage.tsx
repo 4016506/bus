@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import NavBar from './NavBar';
+import BusKeyboard from '../components/BusKeyboard';
 import { 
   subscribeToBusdleTemplate,
-  checkFirebaseConnection 
+  checkFirebaseConnection,
+  subscribeToActiveBusBank
 } from '../services/busDataService';
 
 interface BusdleTemplate {
   date: string;
   busOrder: string[];
   uniqueBusCount: number;
+  busBank?: string[];
 }
 
 interface Guess {
@@ -23,6 +26,7 @@ interface SavedGameState {
   gameWon: boolean;
   inputValues: string[];
   templateDate: string;
+  gameMode: 'easy' | 'hard';
 }
 
 // localStorage utility functions for game state persistence
@@ -62,6 +66,9 @@ export default function BusdlePage() {
   const [animatingGuessIndex, setAnimatingGuessIndex] = useState<number | null>(null);
   const [showWinAnimation, setShowWinAnimation] = useState(false);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
+  const [gameMode, setGameMode] = useState<'easy' | 'hard'>('hard');
+  const [selectedBuses, setSelectedBuses] = useState<string[]>([]);
+  const [fallbackBusBank, setFallbackBusBank] = useState<string[]>([]);
 
   // Check Firebase connection on mount
   useEffect(() => {
@@ -72,6 +79,26 @@ export default function BusdlePage() {
     
     checkConnection();
   }, []);
+
+  // Load fallback bus bank from Firebase or localStorage
+  useEffect(() => {
+    if (isFirebaseConnected) {
+      const unsubscribe = subscribeToActiveBusBank((busBank) => {
+        setFallbackBusBank(busBank);
+      });
+      return unsubscribe;
+    } else {
+      // Fallback to localStorage
+      const savedBusBank = localStorage.getItem('selectedBusBank');
+      if (savedBusBank) {
+        try {
+          setFallbackBusBank(JSON.parse(savedBusBank));
+        } catch (error) {
+          console.error('Error loading fallback bus bank:', error);
+        }
+      }
+    }
+  }, [isFirebaseConnected]);
 
   // Load current Busdle template and saved game state
   useEffect(() => {
@@ -88,12 +115,14 @@ export default function BusdlePage() {
             setCurrentGuess(savedState.currentGuess);
             setGameWon(savedState.gameWon);
             setInputValues(savedState.inputValues);
+            setGameMode(savedState.gameMode || 'hard');
           } else {
             // No saved state or different template, start fresh
             setInputValues(new Array(template.busOrder.length).fill(''));
             setGuesses([]);
             setCurrentGuess([]);
             setGameWon(false);
+            setGameMode('hard');
           }
         }
       });
@@ -114,12 +143,14 @@ export default function BusdlePage() {
           setCurrentGuess(savedState.currentGuess);
           setGameWon(savedState.gameWon);
           setInputValues(savedState.inputValues);
+          setGameMode(savedState.gameMode || 'hard');
         } else {
           // No saved state or different template, start fresh
           setInputValues(new Array(busdleData['current'].busOrder.length).fill(''));
           setGuesses([]);
           setCurrentGuess([]);
           setGameWon(false);
+          setGameMode('hard');
         }
       }
     }
@@ -133,11 +164,12 @@ export default function BusdlePage() {
         currentGuess,
         gameWon,
         inputValues,
-        templateDate: currentTemplate.date
+        templateDate: currentTemplate.date,
+        gameMode
       };
       saveGameState(gameState);
     }
-  }, [guesses, currentGuess, gameWon, inputValues, currentTemplate]);
+  }, [guesses, currentGuess, gameWon, inputValues, currentTemplate, gameMode]);
 
   // Check if guess matches the target (proper Wordle algorithm)
   const evaluateGuess = (guess: string[]): ('correct' | 'present' | 'absent')[] => {
@@ -181,11 +213,77 @@ export default function BusdlePage() {
       return;
     }
 
+    // Use the new function with current guess data
+    await handleGuessWithData([...currentGuess]);
+  };
+
+  const handleInputChange = (index: number, value: string) => {
+    // Remove any non-alphanumeric characters and convert to uppercase
+    const cleanedValue = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    
+    const newInputValues = [...inputValues];
+    newInputValues[index] = cleanedValue;
+    setInputValues(newInputValues);
+    
+    const newCurrentGuess = [...currentGuess];
+    newCurrentGuess[index] = cleanedValue;
+    setCurrentGuess(newCurrentGuess);
+  };
+
+  const resetGame = () => {
+    setGuesses([]);
+    setCurrentGuess([]);
+    setGameWon(false);
+    setShowWinAnimation(false);
+    setIsSubmitting(false);
+    setAnimatingGuessIndex(null);
+    setInputValues(currentTemplate ? new Array(currentTemplate.busOrder.length).fill('') : []);
+    setGameMode('hard');
+    setSelectedBuses([]);
+    // Clear saved game state from localStorage
+    clearGameState();
+  };
+
+  // Bus selection functions for easy mode
+  const handleBusSelect = (bus: string) => {
+    if (selectedBuses.length < (currentTemplate?.busOrder.length || 0)) {
+      setSelectedBuses(prev => [...prev, bus]);
+    }
+  };
+
+  const handleBusBackspace = () => {
+    setSelectedBuses(prev => prev.slice(0, -1));
+  };
+
+  const handleBusEnter = () => {
+    if (selectedBuses.length === (currentTemplate?.busOrder.length || 0)) {
+      const guessBuses = [...selectedBuses];
+      const inputVals = selectedBuses.map(bus => bus);
+      
+      // Set the guess immediately
+      setCurrentGuess(guessBuses);
+      setInputValues(inputVals);
+      setSelectedBuses([]);
+      
+      // Submit the guess directly with the data
+      handleGuessWithData(guessBuses);
+    }
+  };
+
+  // New function to handle guess submission with explicit data
+  const handleGuessWithData = async (guessData: string[]) => {
+    if (!currentTemplate || guessData.length !== currentTemplate.busOrder.length || isSubmitting) return;
+    
+    // Check if all positions are filled with non-empty alphanumeric values
+    if (guessData.some(bus => !bus || bus.length === 0)) {
+      return;
+    }
+
     setIsSubmitting(true);
     
-    const results = evaluateGuess(currentGuess);
+    const results = evaluateGuess(guessData);
     const newGuessIndex = guesses.length;
-    const newGuess: Guess = { buses: [...currentGuess], results, isAnimating: true };
+    const newGuess: Guess = { buses: [...guessData], results, isAnimating: true };
     
     // Add the guess immediately but with animation flag
     setGuesses(prev => [...prev, newGuess]);
@@ -194,6 +292,7 @@ export default function BusdlePage() {
     // Reset current guess inputs immediately
     setCurrentGuess([]);
     setInputValues(new Array(currentTemplate.busOrder.length).fill(''));
+    setSelectedBuses([]);
     
     // Animate tiles with staggered timing
     for (let i = 0; i < results.length; i++) {
@@ -223,31 +322,6 @@ export default function BusdlePage() {
     setIsSubmitting(false);
   };
 
-  const handleInputChange = (index: number, value: string) => {
-    // Remove any non-alphanumeric characters and convert to uppercase
-    const cleanedValue = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    
-    const newInputValues = [...inputValues];
-    newInputValues[index] = cleanedValue;
-    setInputValues(newInputValues);
-    
-    const newCurrentGuess = [...currentGuess];
-    newCurrentGuess[index] = cleanedValue;
-    setCurrentGuess(newCurrentGuess);
-  };
-
-  const resetGame = () => {
-    setGuesses([]);
-    setCurrentGuess([]);
-    setGameWon(false);
-    setShowWinAnimation(false);
-    setIsSubmitting(false);
-    setAnimatingGuessIndex(null);
-    setInputValues(currentTemplate ? new Array(currentTemplate.busOrder.length).fill('') : []);
-    // Clear saved game state from localStorage
-    clearGameState();
-  };
-
   const getColorClass = (result: 'correct' | 'present' | 'absent') => {
     switch (result) {
       case 'correct': return 'busdle-tile-correct';
@@ -271,6 +345,11 @@ export default function BusdlePage() {
     }
     
     return classes;
+  };
+
+  // Helper function to get the effective bus bank (template or fallback)
+  const getEffectiveBusBank = () => {
+    return currentTemplate?.busBank || fallbackBusBank;
   };
 
   if (!currentTemplate) {
@@ -308,11 +387,58 @@ export default function BusdlePage() {
           <p className="text-xl text-white/70 max-w-2xl mx-auto mb-4">
             Guess the order of buses that arrived this morning!
           </p>
-          <div className="flex justify-center gap-6 text-white/60">
+          <div className="flex justify-center gap-6 text-white/60 mb-6">
             <span>🚌 Total Buses: {currentTemplate.busOrder.length}</span>
             <span>🔢 Unique Buses: {currentTemplate.uniqueBusCount}</span>
             <span>🎮 Guesses: {guesses.length}</span>
           </div>
+
+          {/* Mode Selection - Only show before first guess */}
+          {guesses.length === 0 && !gameWon && (
+            <div className="card mb-6">
+              <h3 className="text-lg font-semibold text-white mb-4 text-center">
+                Choose Your Difficulty
+              </h3>
+              <div className="flex gap-4 justify-center">
+                <button
+                  onClick={() => setGameMode('hard')}
+                  className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                    gameMode === 'hard'
+                      ? 'bg-red-500/20 border-2 border-red-500 text-red-200'
+                      : 'bg-white/10 hover:bg-white/20 text-white/70'
+                  }`}
+                >
+                  🔥 Normal Mode
+                  <div className="text-xs mt-1">How the game should actually be played</div>
+                </button>
+                <button
+                  onClick={() => setGameMode('easy')}
+                  className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                    gameMode === 'easy'
+                      ? 'bg-green-500/20 border-2 border-green-500 text-green-200'
+                      : 'bg-white/10 hover:bg-white/20 text-white/70'
+                  }`}
+                >
+                  🌟 Wimpy Mode
+                  <div className="text-xs mt-1">For wimps who can't count for shit</div>
+                </button>
+              </div>
+              {gameMode === 'easy' && getEffectiveBusBank().length > 0 && (
+                <div className="mt-4 text-center">
+                  <p className="text-white/70 text-sm">
+                    Bus bank: {getEffectiveBusBank().length} buses available
+                  </p>
+                </div>
+              )}
+              {gameMode === 'easy' && getEffectiveBusBank().length === 0 && (
+                <div className="mt-4 text-center">
+                  <p className="text-yellow-500/70 text-sm">
+                    ⚠️ No bus bank available. Switch to hard mode or ask admin to set one.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="max-w-2xl mx-auto">
@@ -339,32 +465,83 @@ export default function BusdlePage() {
           {!gameWon && (
             <div className="card mb-6">
               <h3 className="text-lg font-semibold text-white mb-4 text-center">
-                Enter your guess:
+                {gameMode === 'easy' ? 'Select your guess:' : 'Enter your guess:'}
               </h3>
-              <div className="flex gap-2 justify-center mb-4">
-                {inputValues.map((value, index) => (
-                  <input
-                    key={index}
-                    type="text"
-                    value={value}
-                    onChange={(e) => handleInputChange(index, e.target.value)}
-                    className="w-16 h-16 text-center text-lg font-bold bg-white/10 border border-white/30 rounded-lg text-white focus:border-primary-500 focus:outline-none"
-                    placeholder="?"
-                    maxLength={3}
-                    pattern="[a-zA-Z0-9]*"
-                    title="Only letters and numbers are allowed"
-                  />
-                ))}
-              </div>
-              <div className="text-center">
-                <button
-                  onClick={handleGuess}
-                  disabled={currentGuess.length !== currentTemplate.busOrder.length || currentGuess.some(bus => !bus || bus.length === 0) || isSubmitting}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? '🎯 Checking...' : '🎯 Submit Guess'}
-                </button>
-              </div>
+              
+              {/* Show selected buses for easy mode */}
+              {gameMode === 'easy' && (
+                <div className="flex gap-2 justify-center mb-4">
+                  {Array.from({ length: currentTemplate.busOrder.length }, (_, index) => (
+                    <div
+                      key={index}
+                      className="w-16 h-16 text-center text-lg font-bold bg-white/10 border border-white/30 rounded-lg text-white flex items-center justify-center"
+                    >
+                      {selectedBuses[index] || '?'}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Hard mode input */}
+              {gameMode === 'hard' && (
+                <div className="flex gap-2 justify-center mb-4">
+                  {inputValues.map((value, index) => (
+                    <input
+                      key={index}
+                      type="text"
+                      value={value}
+                      onChange={(e) => handleInputChange(index, e.target.value)}
+                      className="w-16 h-16 text-center text-lg font-bold bg-white/10 border border-white/30 rounded-lg text-white focus:border-primary-500 focus:outline-none"
+                      placeholder="?"
+                      maxLength={3}
+                      pattern="[a-zA-Z0-9]*"
+                      title="Only letters and numbers are allowed"
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Submit button for hard mode */}
+              {gameMode === 'hard' && (
+                <div className="text-center">
+                  <button
+                    onClick={handleGuess}
+                    disabled={currentGuess.length !== currentTemplate.busOrder.length || currentGuess.some(bus => !bus || bus.length === 0) || isSubmitting}
+                    className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? '🎯 Checking...' : '🎯 Submit Guess'}
+                  </button>
+                </div>
+              )}
+
+              {/* Bus keyboard for easy mode */}
+              {gameMode === 'easy' && getEffectiveBusBank().length > 0 && (
+                <BusKeyboard
+                  buses={getEffectiveBusBank()}
+                  onBusSelect={handleBusSelect}
+                  onBackspace={handleBusBackspace}
+                  onEnter={handleBusEnter}
+                  disabled={isSubmitting}
+                  selectedBuses={selectedBuses}
+                  maxLength={currentTemplate.busOrder.length}
+                />
+              )}
+
+              {/* No bus bank available message */}
+              {gameMode === 'easy' && getEffectiveBusBank().length === 0 && (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-4">⚠️</div>
+                  <p className="text-white/70 mb-4">
+                    No bus bank available for easy mode.
+                  </p>
+                  <button
+                    onClick={() => setGameMode('hard')}
+                    className="btn-primary"
+                  >
+                    Switch to Hard Mode
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

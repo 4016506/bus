@@ -30,7 +30,7 @@ function Home() {
               Bus Tracker
             </h2>
             <p className="text-xl md:text-2xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed animate-slide-up" style={{animationDelay: '0.2s'}}>
-              Track your daily bus rides, analyze your transportation patterns, and manage your journey history with style.
+              Follow and track my daily bus rides around Seattle!
             </p>
             
             {/* CTA Buttons */}

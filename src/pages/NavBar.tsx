@@ -18,7 +18,7 @@ export default function NavBar() {
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-2 group">
             <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-purple-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-              <span className="text-white font-bold text-sm">B</span>
+              <span className="text-white font-bold text-sm">40</span>
             </div>
             <span className="text-white font-bold text-lg hidden sm:block">Bus Tracker</span>
           </Link>

@@ -19,6 +19,15 @@ export interface BusdleTemplate {
   date: string;
   busOrder: string[];
   uniqueBusCount: number;
+  busBank?: string[]; // Optional bus bank for easy mode
+}
+
+export interface BusBankTemplate {
+  id: string;
+  name: string;
+  buses: string[];
+  createdAt: string;
+  lastUsed?: string;
 }
 
 export interface BusLogData {
@@ -234,6 +243,106 @@ export const migrateLocalStorageToFirebase = async (): Promise<void> => {
 
 
 
+
+// Bus bank template operations
+export const saveBusBankTemplate = async (template: BusBankTemplate): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'busBankTemplates', template.id), { 
+      ...template, 
+      lastUpdated: new Date().toISOString() 
+    });
+  } catch (error) {
+    console.error('Error saving bus bank template:', error);
+    throw error;
+  }
+};
+
+export const getBusBankTemplates = async (): Promise<BusBankTemplate[]> => {
+  try {
+    const querySnapshot = await getDocs(collection(db, 'busBankTemplates'));
+    const templates: BusBankTemplate[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (!data.deleted) {
+        templates.push({
+          id: doc.id,
+          name: data.name,
+          buses: data.buses,
+          createdAt: data.createdAt,
+          lastUsed: data.lastUsed
+        });
+      }
+    });
+    
+    // Sort by last used (most recent first), then by creation date
+    return templates.sort((a, b) => {
+      if (a.lastUsed && b.lastUsed) {
+        return new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime();
+      }
+      if (a.lastUsed) return -1;
+      if (b.lastUsed) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  } catch (error) {
+    console.error('Error getting bus bank templates:', error);
+    return [];
+  }
+};
+
+export const deleteBusBankTemplate = async (templateId: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'busBankTemplates', templateId);
+    await setDoc(docRef, { deleted: true, lastUpdated: new Date().toISOString() });
+  } catch (error) {
+    console.error('Error deleting bus bank template:', error);
+    throw error;
+  }
+};
+
+export const updateBusBankTemplateLastUsed = async (templateId: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'busBankTemplates', templateId);
+    await setDoc(docRef, { 
+      lastUsed: new Date().toISOString(),
+      lastUpdated: new Date().toISOString() 
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error updating bus bank template last used:', error);
+    throw error;
+  }
+};
+
+// Active bus bank template operations
+export const saveActiveBusBank = async (busBank: string[]): Promise<void> => {
+  try {
+    await setDoc(doc(db, 'activeBusBank', 'current'), { 
+      buses: busBank,
+      lastUpdated: new Date().toISOString() 
+    });
+  } catch (error) {
+    console.error('Error saving active bus bank:', error);
+    throw error;
+  }
+};
+
+export const getActiveBusBank = async (): Promise<string[]> => {
+  try {
+    const docSnap = await getDoc(doc(db, 'activeBusBank', 'current'));
+    return docSnap.exists() ? docSnap.data().buses || [] : [];
+  } catch (error) {
+    console.error('Error getting active bus bank:', error);
+    return [];
+  }
+};
+
+export const subscribeToActiveBusBank = (callback: (busBank: string[]) => void): Unsubscribe => {
+  return onSnapshot(doc(db, 'activeBusBank', 'current'), (doc) => {
+    callback(doc.exists() ? doc.data()?.buses || [] : []);
+  }, (error) => {
+    console.error('Error in active bus bank subscription:', error);
+  });
+};
 
 // Check if Firebase is properly configured
 export const checkFirebaseConnection = async (): Promise<boolean> => {

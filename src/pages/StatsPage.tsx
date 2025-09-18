@@ -210,7 +210,7 @@ export default function StatsPage() {
             📊 Bus Ride Statistics
           </h1>
           <p className="text-xl text-white/70 max-w-2xl mx-auto">
-            Analyze your transportation patterns and discover insights about your daily commute
+            Check out which buses I've been on and how frequently I've ridden them!
           </p>
           {isLoading && (
             <div className="mt-4">

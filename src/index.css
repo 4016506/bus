@@ -225,6 +225,39 @@ html {
   background: linear-gradient(to bottom right, rgb(239 68 68), rgb(220 38 38));
 }
 
+/* Small bus icons for keyboard */
+.bus-icon-small {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.bus-icon-small:hover {
+  transform: scale(1.1);
+}
+
+.bus-icon-selected {
+  border-color: rgb(147 51 234);
+  box-shadow: 0 0 0 2px rgba(147, 51, 234, 0.3);
+  transform: scale(1.05);
+}
+
+.bus-icon-disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.bus-icon-disabled:hover {
+  transform: none !important;
+}
+
 /* Busdle Game Animations */
 .busdle-tile {
   transition: all 0.3s ease;
