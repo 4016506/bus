@@ -17,6 +17,41 @@ interface Guess {
   isAnimating?: boolean;
 }
 
+interface SavedGameState {
+  guesses: Guess[];
+  currentGuess: string[];
+  gameWon: boolean;
+  inputValues: string[];
+  templateDate: string;
+}
+
+// localStorage utility functions for game state persistence
+const saveGameState = (gameState: SavedGameState) => {
+  try {
+    localStorage.setItem('busdleGameState', JSON.stringify(gameState));
+  } catch (error) {
+    console.warn('Failed to save game state to localStorage:', error);
+  }
+};
+
+const loadGameState = (): SavedGameState | null => {
+  try {
+    const saved = localStorage.getItem('busdleGameState');
+    return saved ? JSON.parse(saved) : null;
+  } catch (error) {
+    console.warn('Failed to load game state from localStorage:', error);
+    return null;
+  }
+};
+
+const clearGameState = () => {
+  try {
+    localStorage.removeItem('busdleGameState');
+  } catch (error) {
+    console.warn('Failed to clear game state from localStorage:', error);
+  }
+};
+
 export default function BusdlePage() {
   const [currentTemplate, setCurrentTemplate] = useState<BusdleTemplate | null>(null);
   const [guesses, setGuesses] = useState<Guess[]>([]);
@@ -38,14 +73,28 @@ export default function BusdlePage() {
     checkConnection();
   }, []);
 
-  // Load current Busdle template (persistent, not date-based)
+  // Load current Busdle template and saved game state
   useEffect(() => {
     if (isFirebaseConnected) {
       // Subscribe to real-time updates from Firebase using 'current' as the key
       const unsubscribe = subscribeToBusdleTemplate('current', (template) => {
         setCurrentTemplate(template);
         if (template) {
-          setInputValues(new Array(template.busOrder.length).fill(''));
+          // Load saved game state if it exists and matches current template
+          const savedState = loadGameState();
+          if (savedState && savedState.templateDate === template.date) {
+            // Restore saved game state
+            setGuesses(savedState.guesses.map(guess => ({ ...guess, isAnimating: false }))); // Remove animation flags
+            setCurrentGuess(savedState.currentGuess);
+            setGameWon(savedState.gameWon);
+            setInputValues(savedState.inputValues);
+          } else {
+            // No saved state or different template, start fresh
+            setInputValues(new Array(template.busOrder.length).fill(''));
+            setGuesses([]);
+            setCurrentGuess([]);
+            setGameWon(false);
+          }
         }
       });
       
@@ -56,10 +105,39 @@ export default function BusdlePage() {
       
       if (busdleData['current']) {
         setCurrentTemplate(busdleData['current']);
-        setInputValues(new Array(busdleData['current'].busOrder.length).fill(''));
+        
+        // Load saved game state if it exists and matches current template
+        const savedState = loadGameState();
+        if (savedState && savedState.templateDate === busdleData['current'].date) {
+          // Restore saved game state
+          setGuesses(savedState.guesses.map(guess => ({ ...guess, isAnimating: false }))); // Remove animation flags
+          setCurrentGuess(savedState.currentGuess);
+          setGameWon(savedState.gameWon);
+          setInputValues(savedState.inputValues);
+        } else {
+          // No saved state or different template, start fresh
+          setInputValues(new Array(busdleData['current'].busOrder.length).fill(''));
+          setGuesses([]);
+          setCurrentGuess([]);
+          setGameWon(false);
+        }
       }
     }
   }, [isFirebaseConnected]);
+
+  // Save game state to localStorage whenever it changes
+  useEffect(() => {
+    if (currentTemplate) {
+      const gameState: SavedGameState = {
+        guesses: guesses.map(guess => ({ ...guess, isAnimating: false })), // Remove animation flags before saving
+        currentGuess,
+        gameWon,
+        inputValues,
+        templateDate: currentTemplate.date
+      };
+      saveGameState(gameState);
+    }
+  }, [guesses, currentGuess, gameWon, inputValues, currentTemplate]);
 
   // Check if guess matches the target (proper Wordle algorithm)
   const evaluateGuess = (guess: string[]): ('correct' | 'present' | 'absent')[] => {
@@ -166,6 +244,8 @@ export default function BusdlePage() {
     setIsSubmitting(false);
     setAnimatingGuessIndex(null);
     setInputValues(currentTemplate ? new Array(currentTemplate.busOrder.length).fill('') : []);
+    // Clear saved game state from localStorage
+    clearGameState();
   };
 
   const getColorClass = (result: 'correct' | 'present' | 'absent') => {
