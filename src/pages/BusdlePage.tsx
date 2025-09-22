@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import NavBar from './NavBar';
 import BusKeyboard from '../components/BusKeyboard';
+import ShareResults from '../components/ShareResults';
 import { 
   subscribeToBusdleTemplate,
   checkFirebaseConnection,
@@ -72,6 +73,7 @@ export default function BusdlePage() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [inputError, setInputError] = useState<string>('');
   const [focusedInputIndex, setFocusedInputIndex] = useState<number>(0);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Check Firebase connection on mount
   useEffect(() => {
@@ -259,6 +261,7 @@ export default function BusdlePage() {
     setShowKeyboardHelp(false);
     setInputError('');
     setFocusedInputIndex(0);
+    setShowShareModal(false);
     // Clear saved game state from localStorage
     clearGameState();
   };
@@ -772,6 +775,12 @@ export default function BusdlePage() {
                 It took you {guesses.length} guess{guesses.length !== 1 ? 'es' : ''}
               </p>
               <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={() => setShowShareModal(true)} 
+                  className="btn-primary"
+                >
+                  📤 Share Results
+                </button>
                 <button onClick={resetGame} className="btn-secondary">
                   🔄 Play Again
                 </button>
@@ -799,6 +808,16 @@ export default function BusdlePage() {
           </div>
         </div>
       </div>
+
+      {/* Share Results Modal */}
+      {showShareModal && currentTemplate && (
+        <ShareResults
+          guesses={guesses}
+          templateDate={currentTemplate.date}
+          gameMode={gameMode}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </div>
   );
 }
