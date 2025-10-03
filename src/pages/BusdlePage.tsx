@@ -268,17 +268,7 @@ export default function BusdlePage() {
 
   // Bus selection functions for easy mode
   const handleBusSelect = (bus: string) => {
-    // If the bus is already selected, remove it (toggle behavior)
-    const existingIndex = selectedBuses.findIndex(slot => slot === bus);
-    if (existingIndex !== -1) {
-      const newSelectedBuses = [...selectedBuses];
-      newSelectedBuses[existingIndex] = '';
-      setSelectedBuses(newSelectedBuses);
-      setInputError('');
-      return;
-    }
-
-    // If there are empty slots, fill the first one
+    // If there are empty slots, fill the first one (allow duplicates)
     const emptyIndex = selectedBuses.findIndex(slot => !slot || slot.length === 0);
     if (emptyIndex !== -1) {
       const newSelectedBuses = [...selectedBuses];
@@ -286,11 +276,21 @@ export default function BusdlePage() {
       setSelectedBuses(newSelectedBuses);
       setInputError('');
     } else {
-      // If all slots are filled, replace the last one
-      const newSelectedBuses = [...selectedBuses];
-      newSelectedBuses[selectedBuses.length - 1] = bus;
-      setSelectedBuses(newSelectedBuses);
-      setInputError('');
+      // If all slots are filled, check if this bus is already selected
+      const existingIndex = selectedBuses.findIndex(slot => slot === bus);
+      if (existingIndex !== -1) {
+        // If the bus is already selected and all slots are full, remove it (toggle behavior)
+        const newSelectedBuses = [...selectedBuses];
+        newSelectedBuses[existingIndex] = '';
+        setSelectedBuses(newSelectedBuses);
+        setInputError('');
+      } else {
+        // If all slots are filled with different buses, replace the last one
+        const newSelectedBuses = [...selectedBuses];
+        newSelectedBuses[selectedBuses.length - 1] = bus;
+        setSelectedBuses(newSelectedBuses);
+        setInputError('');
+      }
     }
   };
 
